@@ -1,0 +1,1 @@
+SELECT student_number FROM student
