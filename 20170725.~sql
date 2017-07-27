@@ -1,0 +1,383 @@
+--单行子查询
+--【示例】查询和员工’Fred’具有同一个上司的其它员工的编号和姓名。
+SELECT e.employee_id,e.first_name||e.last_name emp_name
+FROM employees e
+WHERE e.manager_id=(SELECT e1.manager_id
+                    FROM employees e1
+                    WHERE e1.first_name='Fred')
+AND e.first_name!='Fred';
+
+--【示例】查询价格大于所有产品平均价格的产品的编号、产品名、价格。
+SELECT p.product_id,p.name,p.price
+FROM products p
+WHERE p.price>(SELECT AVG(p1.price)
+               FROM products p1);
+
+
+--【示例】对产品按照产品类型进行分组，输出产品组平均价格高于全部产品平均价格
+--的产品类型编号和平均价格。
+SELECT p.product_type_id,AVG(p.price) avg_price
+FROM products p
+GROUP BY p.product_type_id
+HAVING AVG(p.price)>(SELECT AVG(p1.price)
+                     FROM products p1);
+--多行子查询
+--【示例】查询购买了编号为2的产品的顾客的信息。
+SELECT c.*
+FROM customers c
+WHERE c.customer_id=ANY(SELECT pu.customer_id
+                        FROM purchases pu
+                        WHERE pu.product_id=2);
+
+--【示例】查询产品订购数量小于1号产品和2号产品订购数量的产品的编号和产品名。
+SELECT p.product_id,p.name
+FROM products p
+WHERE p.product_id=ANY(
+    SELECT pu.product_id
+    FROM purchases pu
+    GROUP BY pu.product_id
+    HAVING SUM(pu.quantity)<ALL(SELECT SUM(pu1.quantity)
+                                FROM purchases pu1
+                                WHERE pu1.product_id IN (1,2)
+                                GROUP BY pu1.product_id));
+
+
+--【示例】检索每一个产品的编号，产品名，被购买的次数，被购买的数量
+SELECT product_id,p.name,nvl(t.c,0) c,nvl(t.q,0) q
+FROM products p LEFT OUTER JOIN (SELECT pu.product_id,COUNT(pu.customer_id) c,SUM(pu.quantity) q
+                                 FROM purchases pu
+                                 GROUP BY pu.product_id) t USING(product_id) ;
+--按产品类型对产品分组，并计算每组产品的平均价格和产品数量，
+--在显示每组产品的平均价格和产品数量时，同时显示该组产品的类型名称。
+SELECT product_type_id,pts.NAME type_name,t.avg_price,t.c
+FROM (
+  SELECT p.product_type_id,AVG(p.price) avg_price,COUNT(p.product_id) c
+  FROM products p
+  GROUP BY p.product_type_id) t LEFT OUTER JOIN product_types pts USING(product_type_id);
+  
+--查询每种产品类型中价格最低的产品的编号、产品名和价格
+SELECT p.product_id,p.product_type_id,p.NAME,p.price
+FROM products p
+WHERE (p.product_type_id,p.price) IN 
+(SELECT p1.product_type_id,MIN(p1.price)
+ FROM products p1
+ GROUP BY p1.product_type_id);
+ 
+--查询价格高于同类产品平均价格的产品的信息
+SELECT p.*
+FROM products p
+WHERE p.price>(SELECT AVG(p1.price)
+               FROM products p1
+               WHERE p1.product_type_id=p.product_type_id);
+               
+--检索负责管理其它员工的员工的信息
+SELECT e.*
+FROM employees e
+WHERE EXISTS (SELECT *
+              FROM employees e1
+              WHERE e1.manager_id=e.employee_id);
+              
+--检索从来未被卖出的产品的信息
+SELECT p.*
+FROM products p
+WHERE NOT EXISTS (SELECT *
+                  FROM purchases pu
+                  WHERE pu.product_id=p.product_id)
+ORDER BY p.product_id;
+
+--将编号为2的员工的工资改为和3号员工的工资相同
+SELECT * FROM employees;
+UPDATE employees SET salary=(SELECT salary FROM employees WHERE employee_id=3) WHERE employee_id=2;
+
+--删除价格最低的产品的信息
+DELETE FROM products WHERE price=(SELECT MIN(price) FROM products);
+
+
+--1、基于products表，查询其价格是同类产品中价格最高或者是最低的产品的编号、产品名称。
+SELECT p.product_id,p.name,p.product_type_id,p.price
+FROM products p
+WHERE (p.product_type_id,p.price) IN (SELECT p1.product_type_id,MAX(p1.price) 
+                                      FROM products p1 
+                                      WHERE p1.product_type_id=p.product_type_id 
+                                      GROUP BY p1.product_type_id)
+    OR (p.product_type_id,p.price) IN (SELECT p1.product_type_id,MIN(p1.price) 
+                                      FROM products p1 
+                                      WHERE p1.product_type_id=p.product_type_id 
+                                      GROUP BY p1.product_type_id);
+
+--2、基于employees表，查询手下没有下级的员工编号、姓名。
+SELECT e.employee_id,e.first_name||e.last_name emp_name
+FROM employees e
+WHERE NOT EXISTS (SELECT *
+                  FROM employees e1
+                  WHERE e1.manager_id=e.employee_id);
+
+--3、基于employees表，查询手下员工超过两名的管理人员的编号和姓名。
+SELECT e.employee_id,e.first_name||e.last_name emp_name
+FROM employees e
+WHERE e.employee_id=ANY(
+   SELECT e1.manager_id
+   FROM employees e1
+   GROUP BY e1.manager_id
+   HAVING COUNT(e1.employee_id)>=2);
+
+--4、更新products表，将编号为2的产品的价格修改为3号产品价格的1.5倍。
+UPDATE products SET price=(SELECT price*1.5 FROM products WHERE product_id=3) WHERE product_id=2;
+
+--5、更新products表，将购买次数超过2次或购买数量超过6的产品价格提升30%。
+UPDATE products 
+SET price=price*1.3 
+WHERE product_id IN (SELECT pu.product_id
+                     FROM purchases pu
+                     GROUP BY pu.product_id
+                     HAVING COUNT(pu.customer_id)>2 OR SUM(pu.quantity)>6);
+                     
+       
+UPDATE products SET price=40 WHERE product_id=1;                     
+--集合操作
+SELECT *
+FROM product_changes
+UNION ALL
+SELECT *
+FROM products
+ORDER BY 1;
+
+SELECT *
+FROM product_changes
+UNION 
+SELECT *
+FROM products
+ORDER BY 1;
+
+SELECT *
+FROM product_changes
+INTERSECT
+SELECT *
+FROM products
+ORDER BY 1;
+------------------------------
+SELECT *
+FROM product_changes
+MINUS
+SELECT *
+FROM products
+ORDER BY 1;
+
+SELECT *
+FROM products
+MINUS
+SELECT *
+FROM product_changes
+ORDER BY 1;
+-----------------
+SELECT *
+FROM products
+UNION
+(
+SELECT *
+FROM product_changes
+MINUS
+SELECT *
+FROM product_changes);
+
+---------decode
+SELECT mp.prd_id,mp.prd_type_id,mp.NAME,decode(mp.available,'Y','Yes','No') available
+FROM more_products mp;
+
+--case
+--如果产品类型为1则返回’book’，如果为2则返回’video’，如果为3则返回’dvd’,如果为4则返回’cd’，
+--否则返回’magazine’。
+SELECT p.product_id,p.NAME,CASE p.product_type_id
+                           WHEN 1 THEN 'book'
+                           WHEN 2 THEN 'video'
+                           WHEN 3 THEN 'dvd'
+                           WHEN 4 THEN 'cd'
+                           ELSE 'magazine'
+                           END type_name,p.DESCRIPTION,p.price
+FROM products p;
+
+--products表。如果价格超过15，则显示’expensive’，否则显示’cheap’
+SELECT p.*,CASE WHEN p.price>15 THEN 'expensive' ELSE 'cheap' END price_flag
+FROM products p;
+
+--
+--从编号为1的人员开始，按照上下级关系，
+--查找下级人员的编号、姓名、上级编号，同时输出每条记录的层级号。
+SELECT LEVEL,employee_id,e.first_name||' '||e.last_name emp_name,e.manager_id
+FROM employees e
+START WITH employee_id=1
+CONNECT BY PRIOR e.employee_id=e.manager_id
+ORDER BY LEVEL;
+
+--从编号为2的人员开始，查询他下级的人员信息
+SELECT LEVEL,employee_id,e.first_name||' '||e.last_name emp_name,e.manager_id
+FROM employees e
+START WITH employee_id=2
+CONNECT BY PRIOR e.employee_id=e.manager_id
+ORDER BY LEVEL,employee_id;   
+
+--从last_name中包含‘o’字符的人员开始进行遍历   
+SELECT LEVEL,employee_id,e.first_name||' '||e.last_name emp_name,e.manager_id
+FROM employees e
+START WITH last_name LIKE '%o%'
+CONNECT BY PRIOR e.employee_id=e.manager_id
+ORDER BY LEVEL,employee_id;     
+
+--从last_name=‘Jones’的人员开始，向上查询他的所有上级。
+SELECT LEVEL,employee_id,e.first_name||' '||e.last_name emp_name,e.manager_id
+FROM employees e
+START WITH last_name='Jones'
+CONNECT BY PRIOR e.manager_id=e.employee_id
+ORDER BY LEVEL,employee_id; 
+
+--在层次化查询中限制输出编号为2的人员信息
+SELECT LEVEL,employee_id,e.first_name||' '||e.last_name emp_name,e.manager_id
+FROM employees e
+WHERE employee_id!=2
+START WITH employee_id=1
+CONNECT BY PRIOR e.employee_id=e.manager_id
+ORDER BY LEVEL,employee_id;
+
+--在层次化查询中限制输出编号为2的人员及其所有下属的信息
+SELECT LEVEL,employee_id,e.first_name||' '||e.last_name emp_name,e.manager_id
+FROM employees e
+START WITH employee_id=1
+CONNECT BY PRIOR e.employee_id=e.manager_id AND e.employee_id!=2
+ORDER BY LEVEL,employee_id;
+
+--分析函数
+--检索产品的信息以及同类型产品的平均价格
+SELECT p.*,AVG(p.price) over(PARTITION BY p.product_type_id) avg_price
+FROM products p;
+
+SELECT p.*,AVG(p.price) over() avg_price
+FROM products p;
+
+SELECT p.*,AVG(p.price) over(PARTITION BY p.product_type_id ORDER BY p.price DESC) avg_price
+FROM products p;
+--检索产品的信息以及同类型产品的合计价格
+SELECT p.*,SUM(p.price) over(PARTITION BY p.product_type_id) sum_price
+FROM products p;
+
+SELECT p.*,SUM(p.price) over(PARTITION BY p.product_type_id ORDER BY p.price ASC) sum_price
+FROM products p;
+
+--根据产品类型对产品分区，同一个分区内的产品根据价格从高到底编号。
+SELECT p.*,row_number() over(PARTITION BY p.product_type_id ORDER BY p.price DESC) rn
+FROM products p;
+
+SELECT t.*
+FROM (SELECT p.*,row_number() over(PARTITION BY p.product_type_id ORDER BY p.price DESC) rn
+      FROM products p) t
+      WHERE t.rn<=3;
+
+--【示例1】对产品表，根据价格从高往低进行排名。
+SELECT p.*,dense_rank() over(ORDER BY p.price DESC NULLS LAST) rn
+FROM products p;
+
+--【示例2】按照价格从高到低的顺序，输出排名前10的产品。
+SELECT t.*
+FROM (
+  SELECT p.*,rank() over(ORDER BY p.price DESC NULLS LAST) rn
+  FROM products p) t
+  WHERE t.rn<=10;
+
+--【示例3】输出产品表中的产品信息，同时对同类产品按照价格从高到低的顺序进行排名。
+SELECT p.*,rank() over(PARTITION BY p.product_type_id ORDER BY p.price DESC NULLS LAST) rn
+FROM products p;
+
+--【示例4】输出每组产品的平均价格。同时对各组产品的平均价格按照从高到低的顺序排名
+SELECT t.*,rank() over(ORDER BY t.avg_price DESC) rn
+FROM (
+ SELECT p.product_type_id,AVG(p.price) avg_price
+ FROM products p
+ GROUP BY p.product_type_id) t;
+ 
+ 
+ 
+ 
+--创建表
+--学生表
+CREATE TABLE t_students(
+       stu_number CHAR(6) CONSTRAINT pk_student_number PRIMARY KEY,
+       stu_name VARCHAR2(50 CHAR) CONSTRAINT nn_student_name NOT NULL CONSTRAINT uq_student_name UNIQUE,
+       stu_sex CHAR(1) CONSTRAINT ck_student_sex CHECK(stu_sex='m' OR stu_sex='f'),
+       stu_dob DATE CONSTRAINT ck_student_dob CHECK(stu_dob>DATE'1980-1-1')
+);
+
+--课程表
+CREATE TABLE t_courses(
+       cou_id INT PRIMARY KEY,
+       cou_name VARCHAR2(50 CHAR) NOT NULL UNIQUE,
+       credit NUMBER(3,1) CHECK(credit>=0)
+);
+--成绩表
+CREATE TABLE t_scores(
+       stu_number CHAR(6) CONSTRAINT fk_score_stu_num REFERENCES t_students(stu_number) CONSTRAINT nn_score_stu_num NOT NULL,
+       cou_id INT CONSTRAINT fk_score_cou_id REFERENCES t_courses(cou_id) CONSTRAINT nn_score_cou_id NOT NULL,
+       score NUMBER(4,1)
+);
+---------------------
+INSERT INTO t_students VALUES('s00001','张三','m',DATE'1996-8-9');
+INSERT INTO t_students VALUES('s00002','李四','f',DATE'1997-8-9');
+
+
+INSERT INTO t_courses VALUES(1,'马克思主义');
+INSERT INTO t_courses VALUES(2,'高等数学');
+
+INSERT INTO t_scores VALUES('s00001',1,69);
+INSERT INTO t_scores VALUES('s00001',1,89);
+
+INSERT INTO t_scores(stu_number,cou_id) VALUES('s00001',2);
+
+SELECT *
+FROM t_scores;
+-----------------------------
+DROP TABLE t_scores;
+DROP TABLE t_students;
+DROP TABLE t_courses;
+
+-------------------------
+CREATE TABLE t_students(
+       stu_number CHAR(6),
+       stu_name VARCHAR2(50 CHAR) CONSTRAINT nn_student_name NOT NULL,
+       stu_sex CHAR(1),
+       stu_dob DATE,
+       CONSTRAINT pk_stu_num PRIMARY KEY(stu_number),
+       CONSTRAINT uq_stu_name UNIQUE(stu_name),
+       CONSTRAINT ck_stu_sex CHECK(stu_sex='m' OR stu_sex='f'),
+       CONSTRAINT ck_stu_dob CHECK(stu_dob>DATE'1980-1-1')
+);
+
+CREATE TABLE t_courses(
+       cou_id INT,
+       cou_name varchar2(50 CHAR) CONSTRAINT nn_course_name NOT NULL,
+       PRIMARY KEY(cou_id),
+       UNIQUE(cou_name)
+);
+
+CREATE TABLE t_scores(
+       stu_number CHAR(6),
+       cou_id INT,
+       score NUMBER(4,1) DEFAULT 0,
+       CONSTRAINT pk_score_stu_cou PRIMARY KEY(stu_number,cou_id),
+       CONSTRAINT fk_score_stu FOREIGN KEY(stu_number) REFERENCES t_students(stu_number),
+       CONSTRAINT fk_score_cou FOREIGN KEY(cou_id) REFERENCES t_courses(cou_id),
+       CONSTRAINT ck_score_score CHECK(score>=0)
+
+);
+-------------------给学生表中添加电话号码列
+ALTER TABLE t_students ADD tel VARCHAR2(20);
+--修改列的长度
+ALTER TABLE t_students MODIFY tel VARCHAR2(18);
+--添加默认值
+ALTER TABLE t_students MODIFY stu_sex DEFAULT 'f';
+--给出生日期列添加新的约束
+ALTER TABLE t_students ADD CONSTRAINT ck_student_dob2 CHECK(stu_dob<DATE'2017-7-21')
+
+
+                     
+                     
+                     
+                     
+                     
